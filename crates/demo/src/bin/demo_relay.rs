@@ -5,12 +5,13 @@ use rand::Rng;
 const SERVER_ADDR: &'static str = "127.0.0.1:3000";
 const RELAY_ADDR: &'static str = "127.0.0.1:3001";
 
-/// change this
+/// change this to adjust packet loss
 fn drop_packet() -> bool {
     // lots of packet loss
     rand::thread_rng().gen_bool(0.25)
 }
 
+/// change this to adjust rtt
 fn delay_packet() -> Duration {
     // lots of delay
     Duration::from_millis(300)
