@@ -24,6 +24,10 @@ fn main() {
 
                 SocketEvent::Received { addr, data } => {
                     println!("received data from {} {:?}", addr, data);
+                },
+
+                SocketEvent::ClosedConnection { addr } => {
+                    println!("connection closed {}", addr);
                 }
             }
         });

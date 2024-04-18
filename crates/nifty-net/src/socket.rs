@@ -24,12 +24,16 @@ pub enum SocketEvent<'a> {
         addr: SocketAddr,
         accept_connection: &'a mut bool,
     },
+    ClosedConnection {
+        addr: SocketAddr,
+    },
     Error(Error),
 }
 
 
 
 impl Socket {
+    /// binds to a port and creates a new socket
     pub fn bind(addr: SocketAddr, config: Config) -> Result<Self, std::io::Error> {
         let udp_socket = UdpSocket::bind(addr)?;
 
@@ -43,13 +47,27 @@ impl Socket {
         })
     }
 
+    /// receives packets and updates internal state
+    ///
+    /// pass in a closure to handle events produced by the socket
     pub fn update(&mut self, time: Duration, mut event_handler: impl FnMut(SocketEvent)) {
 
         // update individual connections
+        let mut connections_to_drop = Vec::new();
+
         for connection in self.connections.iter_mut() {
             if let Err(err) = connection.update(time, &self.config, &self.udp_socket) {
                 event_handler(SocketEvent::Error(err));
             }
+
+            if connection.should_drop() {
+                connections_to_drop.push(connection.address());
+            }
+        }
+
+        for addr in connections_to_drop {
+            self.connections.remove_connection(addr);
+            event_handler(SocketEvent::ClosedConnection { addr });
         }
 
 
@@ -78,7 +96,7 @@ impl Socket {
 
                         if accept_connection {
                             // unwrap is safe, we have already confirmed that there is no existing connection
-                            self.connections.new_connection(addr).unwrap()
+                            self.connections.new_connection(time, addr).unwrap()
                         } else {
                             continue;
                         }
@@ -127,14 +145,20 @@ impl Socket {
 
     }
 
-    pub fn open_connection(&mut self, addr: SocketAddr) -> Result<(), ()> {
-        let Some(_) = self.connections.new_connection(addr) else {
+    /// opens a new connection with an address
+    ///
+    /// fails if there is already a connection to that address
+    pub fn open_connection(&mut self, time: Duration, addr: SocketAddr) -> Result<(), ()> {
+        let Some(_) = self.connections.new_connection(time, addr) else {
             return Err(());
         };
 
         Ok(())
     }
 
+    /// sends a message to an address
+    ///
+    /// fails if there is no connection with that address, see [open_connection](Socket::open_connection)
     pub fn send(&mut self, addr: SocketAddr, reliable: bool, data: Box<[u8]>) -> Result<(), ()> {
         let Some(connection) = self.connections.get_connection_mut(addr) else {
             return Err(());
@@ -143,5 +167,22 @@ impl Socket {
         connection.send(reliable, data);
 
         Ok(())
+    }
+
+    /// returns the number of messages that have not yet been delivered to some address
+    ///
+    /// fails if there is no connection to that address
+    pub fn message_in_transit(&self, addr: SocketAddr) -> Result<usize, ()> {
+        self.connections.get_connection(addr).map(|connection| connection.in_transit()).ok_or(())
+    }
+
+    /// drops the connection to an address
+    pub fn close_connection(&mut self, addr: SocketAddr) -> Result<(), ()> {
+        if let Some(connection) = self.connections.get_connection_mut(addr) {
+            connection.drop();
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 }

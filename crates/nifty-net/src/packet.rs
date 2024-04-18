@@ -26,6 +26,8 @@ pub enum Blob {
     HeartbeatResponse(Heartbeat),
     /// `3`
     Acknowledgement(Acknowledgement),
+    /// `4`
+    Disconnect,
 }
 
 /// used as heartbeat and it's response
@@ -146,6 +148,7 @@ impl Blob {
                 Blob::Heartbeat(heartbeat) => heartbeat.size(),
                 Blob::HeartbeatResponse(heartbeat) => heartbeat.size(),
                 Blob::Acknowledgement(acknowledgement) => acknowledgement.size(),
+                Blob::Disconnect => 0,
             }
         ) as u16
     }
@@ -167,7 +170,10 @@ impl Blob {
             Blob::Acknowledgement(acknowledgement) => {
                 buffer.push(3);
                 acknowledgement.serialize(buffer);
-            }
+            },
+            Blob::Disconnect => {
+                buffer.push(4);
+            },
         }
     }
 

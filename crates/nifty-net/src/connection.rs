@@ -14,6 +14,7 @@ pub struct Connection {
     rtt_samples: VecDeque<Duration>,
     /// recalculated when `rtt_samples` changes
     cached_rtt: Option<Duration>,
+    last_keep_alive: Duration,
 
     next_fragmentation_id: u16,
     send_messages: Vec<SendMessage>,
@@ -22,6 +23,10 @@ pub struct Connection {
     /// acknowledgements to send
     acknowledgements: Vec<Acknowledgement>,
     reliable_blacklist: Vec<(Duration, u16)>,
+
+    /// when set to true the connection will continue to function
+    /// but be removed at the end of the next update
+    drop_connection: bool,
 }
 
 pub struct Connections {
@@ -48,15 +53,19 @@ impl Connections {
     /// will return [Some] if the socket didn't exist with a mutable reference to the [Connection]
     ///
     /// will return [None] if the socket existed
-    pub fn new_connection(&mut self, addr: SocketAddr) -> Option<&mut Connection> {
+    pub fn new_connection(&mut self, time: Duration, addr: SocketAddr) -> Option<&mut Connection> {
         let entry = self.connections.entry(addr);
 
         match entry {
             Entry::Occupied(_) => None,
             Entry::Vacant(entry) => Some(entry.insert(
-                Connection::new(addr)
+                Connection::new(time, addr)
             )),
         }
+    }
+
+    pub fn get_connection(&self, addr: SocketAddr) -> Option<&Connection> {
+        self.connections.get(&addr)
     }
 
     pub fn get_connection_mut(&mut self, addr: SocketAddr) -> Option<&mut Connection> {
@@ -66,11 +75,15 @@ impl Connections {
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Connection> + '_ {
         self.connections.values_mut()
     }
+
+    pub fn remove_connection(&mut self, addr: SocketAddr) {
+        self.connections.remove(&addr);
+    }
 }
 
 
 impl Connection {
-    pub fn new(addr: SocketAddr) -> Self {
+    pub fn new(time: Duration, addr: SocketAddr) -> Self {
         Connection {
             addr,
 
@@ -78,6 +91,7 @@ impl Connection {
             heartbeat_responses: Vec::new(),
             rtt_samples: VecDeque::new(),
             cached_rtt: None,
+            last_keep_alive: time,
 
             next_fragmentation_id: 0,
             send_messages: Vec::new(),
@@ -85,6 +99,8 @@ impl Connection {
             receive_messages: Vec::new(),
             acknowledgements: Vec::new(),
             reliable_blacklist: Vec::new(),
+
+            drop_connection: false,
         }
     }
 
@@ -188,6 +204,18 @@ impl Connection {
         }
 
 
+        // send disconnect message
+        if self.last_keep_alive + config.timeout_delay < time {
+            self.drop_connection = true;
+        }
+
+        if self.drop_connection {
+            let blob = Blob::Disconnect;
+            grouper.ensure_space(blob.size())?;
+            grouper.push(blob);
+        }
+
+
         grouper.send_remaining()?;
 
 
@@ -221,6 +249,8 @@ impl Connection {
     ///
     /// fails if the packet had malformed data
     pub fn receive(&mut self, time: Duration, config: &Config, packet: Packet) -> Result<(), ()> {
+        self.last_keep_alive = time;
+
         for blob in packet.into_iter() {
             match blob {
                 Blob::Fragment(fragment) => {
@@ -264,7 +294,11 @@ impl Connection {
                     ) {
                         message.set_delivered(ack.start as usize .. (ack.start as usize + ack.len as usize))?;
                     }
-                }
+                },
+
+                Blob::Disconnect => {
+                    self.drop_connection = true;
+                },
             }
         }
 
@@ -310,6 +344,19 @@ impl Connection {
 
     fn trim_blacklist(&mut self, earliest: Duration) {
         self.reliable_blacklist.retain(|(time, _)| *time >= earliest);
+    }
+
+    /// returns the number of messages that haven't been delivered yet
+    pub fn in_transit(&self) -> usize {
+        self.send_messages.len()
+    }
+
+    pub fn drop(&mut self) {
+        self.drop_connection = true;
+    }
+
+    pub fn should_drop(&self) -> bool {
+        self.drop_connection
     }
 }
 

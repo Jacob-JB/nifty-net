@@ -43,6 +43,8 @@ pub struct Config {
     /// if it is too low, then reliable message fragments won't be ignored and will be received twice at best
     /// and at worst be a memory leak as it waits forever for other fragments to complete it
     pub reliable_message_blacklist_memory: f32,
+    /// how long to wait before dropping a connection because no packets were received
+    pub timeout_delay: std::time::Duration,
 }
 
 impl Default for Config {
@@ -54,6 +56,7 @@ impl Default for Config {
             reliable_resend_threshold: 1.25,
             unreliable_drop_threshhold: 4.,
             reliable_message_blacklist_memory: 8.,
+            timeout_delay: std::time::Duration::from_millis(10_000),
         }
     }
 }
