@@ -1,11 +1,10 @@
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use nifty_net::prelude::*;
 
 
 const SERVER_ADDR: &'static str = "127.0.0.1:3001";
-const PING_DELAY: Duration = Duration::from_millis(2000);
 
 
 fn main() {
@@ -19,20 +18,29 @@ fn main() {
 
     let start_time = Instant::now();
 
-    socket.open_connection(start_time.elapsed(), SERVER_ADDR.parse().unwrap()).unwrap();
 
+    let server_addr = SERVER_ADDR.parse().unwrap();
+    socket.open_connection(start_time.elapsed(), server_addr).unwrap();
 
-    let mut last_ping = Instant::now();
-    let mut counter = 0;
+    for i in 1..=5 {
+        socket.send(server_addr, true, vec![i; 30].into_boxed_slice()).unwrap();
+    }
+
 
     let mut closed = false;
 
     loop {
         socket.update(start_time.elapsed(), |event| {
             match event {
-                SocketEvent::Error(err) => panic!("{:?}", err),
+                SocketEvent::Error(err) => {
+                    println!("socket error {:?}", err);
+                },
 
-                SocketEvent::NewConnection { .. } => (),
+                SocketEvent::NewConnection { addr } => {
+                    println!("new connection with {}", addr);
+                },
+
+                SocketEvent::ConnectionRequest { .. } => (),
 
                 SocketEvent::Received { addr, data } => {
                     println!("received data from {} {:?}", addr, data);
@@ -49,11 +57,9 @@ fn main() {
             return;
         }
 
-        if last_ping.elapsed() >= PING_DELAY {
-            last_ping = Instant::now();
-            println!("ping {}", counter);
-            socket.send(SERVER_ADDR.parse().unwrap(), true, vec![counter; 20].into_boxed_slice()).unwrap();
-            counter += 1;
+        if socket.messages_in_transit(server_addr).unwrap() == 0 {
+            socket.close_connection(server_addr).unwrap();
+            println!("all messages received, closing");
         }
     }
 }

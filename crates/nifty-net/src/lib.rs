@@ -10,6 +10,8 @@ pub mod prelude {
 }
 
 pub struct Config {
+    /// when a handshake is received, connections will only be established with matching protocol id's
+    pub protocol_id: u64,
     /// the maximum transmission unit for packets
     ///
     /// messages larger than this will be fragmented
@@ -19,6 +21,11 @@ pub struct Config {
     ///
     /// heartbeats are used to keep the connection alive and estimate rtt
     pub heartbeat_interval: std::time::Duration,
+    /// the interval to send handshakes at
+    ///
+    /// handshake requests might be dropped,
+    /// this is how long to wait before sending another until connected
+    pub handshake_interval: std::time::Duration,
     /// how many round trip time samples to keep to calculate an average from
     pub rtt_memory: usize,
     /// what multiple of the round trip time to wait before resending unacknowledged fragments
@@ -50,8 +57,10 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
+            protocol_id: 0,
             mtu: 1500,
             heartbeat_interval: std::time::Duration::from_millis(500),
+            handshake_interval: std::time::Duration::from_millis(100),
             rtt_memory: 16,
             reliable_resend_threshold: 1.25,
             unreliable_drop_threshhold: 4.,

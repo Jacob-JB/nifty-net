@@ -14,7 +14,7 @@ fn drop_packet() -> bool {
 /// change this to adjust rtt
 fn delay_packet() -> Duration {
     // lots of delay
-    Duration::from_millis(300)
+    Duration::from_millis(rand::thread_rng().gen_range(250..=350))
 }
 
 fn main() {

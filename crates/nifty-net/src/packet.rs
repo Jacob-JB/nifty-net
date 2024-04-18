@@ -4,10 +4,16 @@ use std::{mem::size_of, net::{SocketAddr, UdpSocket}, time::Duration};
 ///
 /// # Serialization scheme
 /// - the first two bytes gives the length of the next blob
-/// - the following bytes are that blob
+/// - then as many bytes as needed for that blob
 /// - repeat, starting with the length of the next blob
+///
+/// special case when deserializing where if the first two bytes are zero, the following 8 bytes are a [Handshake]
 pub struct Packet {
     blobs: Vec<Blob>,
+}
+
+pub struct Handshake {
+    pub protocol_id: u64,
 }
 
 /// a blob is a piece of data
@@ -136,6 +142,34 @@ impl Packet {
     }
 }
 
+impl Handshake {
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut bytes = vec![0, 0];
+
+        bytes.extend_from_slice(&self.protocol_id.to_be_bytes());
+
+        bytes
+    }
+
+    /// checks if a packet is a handshake instead of a normal [Packet]
+    pub fn deserialize_handshake(bytes: &[u8]) -> Option<Handshake> {
+        let first_two_bytes = u16::from_be_bytes(TryFrom::try_from(bytes.get(0..2)?).unwrap());
+        let protocol_id = u64::from_be_bytes(TryFrom::try_from(bytes.get(2..10)?).unwrap());
+
+        if first_two_bytes != 0 {
+            return None;
+        }
+
+        Some(Handshake {
+            protocol_id,
+        })
+    }
+
+    pub fn send(&self, addr: SocketAddr, socket: &UdpSocket) -> Result<usize, std::io::Error> {
+        socket.send_to(&self.serialize(), addr)
+    }
+}
+
 impl Blob {
     const HEADER_SIZE: usize = 1;
 
@@ -186,6 +220,7 @@ impl Blob {
             1 => Blob::Heartbeat(Heartbeat::deserialize(bytes)?),
             2 => Blob::HeartbeatResponse(Heartbeat::deserialize(bytes)?),
             3 => Blob::Acknowledgement(Acknowledgement::deserialize(bytes)?),
+            4 => Blob::Disconnect,
             _ => return None,
         })
     }

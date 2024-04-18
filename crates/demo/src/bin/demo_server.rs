@@ -15,10 +15,15 @@ fn main() {
     loop {
         socket.update(start_time.elapsed(), |event| {
             match event {
-                SocketEvent::Error(err) => panic!("{:?}", err),
+                SocketEvent::Error(err) => {
+                    println!("socket error {:?}", err);
+                },
 
-                SocketEvent::NewConnection { addr, accept_connection } => {
-                    println!("new connection from {}", addr);
+                SocketEvent::NewConnection { addr, } => {
+                    println!("new connection with {}", addr);
+                },
+
+                SocketEvent::ConnectionRequest { accept_connection, .. } => {
                     *accept_connection = true;
                 },
 

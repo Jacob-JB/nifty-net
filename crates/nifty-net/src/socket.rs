@@ -2,7 +2,7 @@ use std::{
     io::ErrorKind, net::{SocketAddr, UdpSocket}, time::Duration
 };
 
-use crate::{connection::Connections, packet::Packet, Config, Error};
+use crate::{connection::{Connection, Connections}, packet::{Handshake, Packet}, Config, Error};
 
 
 const RECV_BUFFER_SIZE: usize = u16::MAX as usize;
@@ -21,6 +21,9 @@ pub enum SocketEvent<'a> {
         data: Box<[u8]>,
     },
     NewConnection {
+        addr: SocketAddr,
+    },
+    ConnectionRequest {
         addr: SocketAddr,
         accept_connection: &'a mut bool,
     },
@@ -63,6 +66,10 @@ impl Socket {
             if connection.should_drop() {
                 connections_to_drop.push(connection.address());
             }
+
+            if connection.just_connected() {
+                event_handler(SocketEvent::NewConnection { addr: connection.address() })
+            }
         }
 
         for addr in connections_to_drop {
@@ -84,25 +91,37 @@ impl Socket {
                 // received a packet
                 Ok((received_bytes, addr)) => {
 
-                    // get an existing connection or create one
-                    let connection = if let Some(connection) = self.connections.get_connection_mut(addr) {
-                        connection
-                    } else {
+                    let bytes = receive_buffer.get(0..received_bytes).unwrap();
+                    // handle in case of handshake
+                    if let Some(handshake) = Handshake::deserialize_handshake(bytes) {
+                        if handshake.protocol_id != self.config.protocol_id {
+                            // ignore wrong protocol id's
+                            continue;
+                        }
+
+                        if self.connections.get_connection(addr).is_some() {
+                            // ignore duplicate handshakes
+                            continue;
+                        }
+
                         let mut accept_connection = false;
-                        event_handler(SocketEvent::NewConnection {
+                        event_handler(SocketEvent::ConnectionRequest {
                             addr,
                             accept_connection: &mut accept_connection,
                         });
 
                         if accept_connection {
-                            // unwrap is safe, we have already confirmed that there is no existing connection
-                            self.connections.new_connection(time, addr).unwrap()
-                        } else {
-                            continue;
+                            // unwrap is safe, connection doesn't exist
+                            self.connections.new_connection(Connection::new(time, addr, false)).unwrap();
                         }
-                    };
 
-                    let bytes = receive_buffer.get(0..received_bytes).unwrap();
+                        continue;
+                    }
+
+                    let Some(connection) = self.connections.get_connection_mut(addr) else {
+                        // message is from an address without a connection
+                        continue;
+                    };
 
                     // parse the packet
                     let Some(packet) = Packet::deserialize(bytes) else {
@@ -121,6 +140,11 @@ impl Socket {
 
                     // nothing in queue
                     ErrorKind::WouldBlock => break,
+
+                    // errors to ignore
+                    ErrorKind::ConnectionReset |
+                    ErrorKind::ConnectionRefused |
+                    ErrorKind::ConnectionAborted => (),
 
                     // unhandled
                     _ => {
@@ -149,7 +173,7 @@ impl Socket {
     ///
     /// fails if there is already a connection to that address
     pub fn open_connection(&mut self, time: Duration, addr: SocketAddr) -> Result<(), ()> {
-        let Some(_) = self.connections.new_connection(time, addr) else {
+        let Ok(_) = self.connections.new_connection(Connection::new(time, addr, true)) else {
             return Err(());
         };
 
@@ -172,7 +196,7 @@ impl Socket {
     /// returns the number of messages that have not yet been delivered to some address
     ///
     /// fails if there is no connection to that address
-    pub fn message_in_transit(&self, addr: SocketAddr) -> Result<usize, ()> {
+    pub fn messages_in_transit(&self, addr: SocketAddr) -> Result<usize, ()> {
         self.connections.get_connection(addr).map(|connection| connection.in_transit()).ok_or(())
     }
 

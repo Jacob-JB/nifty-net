@@ -1,12 +1,19 @@
 use std::{collections::{hash_map::Entry, HashMap, VecDeque}, net::{SocketAddr, UdpSocket}, time::Duration};
 
-use crate::{message::{ReceiveMessage, SendMessage}, packet::{Acknowledgement, Blob, Heartbeat, Packet}, Config, Error};
+use crate::{message::{ReceiveMessage, SendMessage}, packet::{Acknowledgement, Blob, Handshake, Heartbeat, Packet}, Config, Error};
 
 
 
 
 pub struct Connection {
     addr: SocketAddr,
+
+    /// this will be some whilst trying to establish a connection
+    ///
+    /// gets set to `None` when a heartbeat is received
+    ///
+    /// contains the time the last heartbeat was sent at
+    last_handshake: Option<Option<Duration>>,
 
     last_heartbeat: Duration,
     /// a queue of heartbeats to respond to
@@ -27,6 +34,8 @@ pub struct Connection {
     /// when set to true the connection will continue to function
     /// but be removed at the end of the next update
     drop_connection: bool,
+    /// set to true to signal that a connection socket event needs to be fired
+    just_connected: bool,
 }
 
 pub struct Connections {
@@ -50,17 +59,15 @@ impl Connections {
 
     /// tries to create a new connection
     ///
-    /// will return [Some] if the socket didn't exist with a mutable reference to the [Connection]
+    /// will return [Ok] if the connection didn't exist with a mutable reference to the [Connection]
     ///
-    /// will return [None] if the socket existed
-    pub fn new_connection(&mut self, time: Duration, addr: SocketAddr) -> Option<&mut Connection> {
-        let entry = self.connections.entry(addr);
+    /// will return [Err] if there is already a connection with that address
+    pub fn new_connection(&mut self, connection: Connection) -> Result<&mut Connection, ()> {
+        let entry: Entry<'_, SocketAddr, Connection> = self.connections.entry(connection.addr);
 
         match entry {
-            Entry::Occupied(_) => None,
-            Entry::Vacant(entry) => Some(entry.insert(
-                Connection::new(time, addr)
-            )),
+            Entry::Occupied(_) => Err(()),
+            Entry::Vacant(entry) => Ok(entry.insert(connection)),
         }
     }
 
@@ -83,9 +90,19 @@ impl Connections {
 
 
 impl Connection {
-    pub fn new(time: Duration, addr: SocketAddr) -> Self {
+    /// creates a new connection at some `time` to some `addr`
+    ///
+    /// `opening_party` should be true if this socket is the one responsible for creating the connection,
+    /// meaning it has to wait before knowing that the connection is established
+    pub fn new(time: Duration, addr: SocketAddr, opening_party: bool) -> Self {
         Connection {
             addr,
+
+            last_handshake: if opening_party {
+                Some(None)
+            } else {
+                None
+            },
 
             last_heartbeat: Duration::ZERO,
             heartbeat_responses: Vec::new(),
@@ -101,6 +118,7 @@ impl Connection {
             reliable_blacklist: Vec::new(),
 
             drop_connection: false,
+            just_connected: !opening_party,
         }
     }
 
@@ -116,6 +134,27 @@ impl Connection {
     }
 
     pub fn update(&mut self, time: Duration, config: &Config, socket: &UdpSocket) -> Result<(), Error> {
+
+        // pause normal logic until a connection has been established
+        if let Some(last_handshake) = self.last_handshake.as_mut() {
+            if if let Some(last_handshake) = last_handshake {
+                // time to send another handshake
+                *last_handshake + config.heartbeat_interval <= time
+            } else {
+                // never sent a handshake
+                true
+            } {
+                *last_handshake = Some(time);
+
+                Handshake {
+                    protocol_id: config.protocol_id,
+                }.send(self.addr, socket).map_err(|err| Error::IoError(err))?;
+            }
+
+            // println!("waiting for established connection");
+            return Ok(());
+        }
+
         let mut grouper = PacketGrouper::new(self.addr, socket, config.mtu);
 
         let resend_delay = self.round_trip_time().map(|rtt| Duration::from_secs_f32(
@@ -273,6 +312,11 @@ impl Connection {
                 },
 
                 Blob::Heartbeat(heartbeat) => {
+                    if self.last_handshake.is_some() {
+                        self.just_connected = true;
+                        self.last_handshake = None;
+                    }
+
                     self.heartbeat_responses.push(heartbeat);
                 },
 
@@ -357,6 +401,15 @@ impl Connection {
 
     pub fn should_drop(&self) -> bool {
         self.drop_connection
+    }
+
+    pub fn just_connected(&mut self) -> bool {
+        if self.just_connected {
+            self.just_connected = false;
+            true
+        } else {
+            false
+        }
     }
 }
 
