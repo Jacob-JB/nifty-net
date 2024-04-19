@@ -200,7 +200,9 @@ impl Socket {
         self.connections.get_connection(addr).map(|connection| connection.in_transit()).ok_or(())
     }
 
-    /// drops the connection to an address
+    /// drops the connection with an address
+    ///
+    /// returns `Err` if the connection didn't exist
     pub fn close_connection(&mut self, addr: SocketAddr) -> Result<(), ()> {
         if let Some(connection) = self.connections.get_connection_mut(addr) {
             connection.drop();
