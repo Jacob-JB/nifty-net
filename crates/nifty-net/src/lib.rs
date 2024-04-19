@@ -9,6 +9,7 @@ pub mod prelude {
     pub use crate::Config;
 }
 
+#[derive(Clone)]
 pub struct Config {
     /// when a handshake is received, connections will only be established with matching protocol id's
     pub protocol_id: u64,
