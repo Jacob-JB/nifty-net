@@ -181,8 +181,42 @@ impl<T> TypedMessages<T> {
         self.received.drain(..)
     }
 
+    /// the same as [take](TypedMessages::take) except it will only drain items from a specific connection
+    pub fn take_from(&mut self, connection_entity: Entity) -> impl Iterator<Item = T> + '_ {
+        TakeFromIter {
+            entity_filter: connection_entity,
+            position: 0,
+            messages: self,
+        }
+    }
+
     /// queues a typed message to be sent in the next socket update
     pub fn send(&mut self, connection_entity: Entity, reliable: bool, message: T) {
         self.send.push_back((connection_entity, reliable, message));
+    }
+}
+
+
+pub struct TakeFromIter<'a, T> {
+    entity_filter: Entity,
+    position: usize,
+    messages: &'a mut TypedMessages<T>,
+}
+
+impl<'a, T> Iterator for TakeFromIter<'a, T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let Some(&(next_entity, _)) = self.messages.received.get(self.position) else {
+                return None;
+            };
+
+            if next_entity == self.entity_filter {
+                return Some(self.messages.received.remove(self.position).unwrap().1);
+            }
+
+            self.position += 1;
+        }
     }
 }
