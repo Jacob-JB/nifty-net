@@ -135,6 +135,11 @@ impl Connection {
 
     pub fn update(&mut self, time: Duration, config: &Config, socket: &UdpSocket) -> Result<(), Error> {
 
+        // timeout connection
+        if self.last_keep_alive + config.timeout_delay < time {
+            self.drop_connection = true;
+        }
+
         // pause normal logic until a connection has been established
         if let Some(last_handshake) = self.last_handshake.as_mut() {
             if if let Some(last_handshake) = last_handshake {
@@ -243,11 +248,7 @@ impl Connection {
         }
 
 
-        // send disconnect message
-        if self.last_keep_alive + config.timeout_delay < time {
-            self.drop_connection = true;
-        }
-
+        // send disconnect message if just decided to drop
         if self.drop_connection {
             let blob = Blob::Disconnect;
             grouper.ensure_space(blob.size())?;
