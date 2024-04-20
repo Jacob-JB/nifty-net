@@ -205,7 +205,7 @@ pub struct TakeFromIter<'a, T, P> {
 }
 
 impl<'a, T, P: FnMut(Entity) -> bool> Iterator for TakeFromIter<'a, T, P> {
-    type Item = T;
+    type Item = (Entity, T);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -214,7 +214,7 @@ impl<'a, T, P: FnMut(Entity) -> bool> Iterator for TakeFromIter<'a, T, P> {
             };
 
             if (self.predicate)(entity) {
-                return Some(self.messages.received.remove(self.position).unwrap().1);
+                return Some(self.messages.received.remove(self.position).unwrap());
             }
 
             self.position += 1;
