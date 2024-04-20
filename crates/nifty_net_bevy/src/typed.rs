@@ -102,7 +102,7 @@ fn buffer_messages(
 pub struct TypedMessages<T> {
     message_id: u16,
     received: VecDeque<(Entity, T)>,
-    send: VecDeque<(Entity, bool, T)>,
+    send: VecDeque<(Entity, bool, Box<[u8]>)>,
 }
 
 /// runs after [buffer_messages] and deserializes messages into their appropriate [TypedMessages]
@@ -141,23 +141,13 @@ fn serialize_typed_messages<T: Serialize + Send + Sync + 'static>(
     mut messages: ResMut<TypedMessages<T>>,
     mut connection_q: Query<&mut Connection>
 ) {
-    let message_id = messages.message_id.to_be_bytes();
-
     for (connection_entity, reliable, message) in messages.send.drain(..) {
         let Ok(mut connection) = connection_q.get_mut(connection_entity) else {
             error!("tried to send a typed message to {:?} but that connection doesn't exist. type was \"{}\"", connection_entity, std::any::type_name::<T>());
             continue;
         };
 
-        let Ok(mut message_bytes) = bincode::serialize(&message) else {
-            error!("failed to serialize typed message to send to {:?}. type was \"{}\"", connection_entity, std::any::type_name::<T>());
-            continue;
-        };
-
-        let mut bytes = Vec::from(message_id);
-        bytes.append(&mut message_bytes);
-
-        connection.send(reliable, bytes.into_boxed_slice());
+        connection.send(reliable, message);
     }
 }
 
@@ -191,8 +181,19 @@ impl<T> TypedMessages<T> {
     }
 
     /// queues a typed message to be sent in the next socket update
-    pub fn send(&mut self, connection_entity: Entity, reliable: bool, message: T) {
-        self.send.push_back((connection_entity, reliable, message));
+    pub fn send(&mut self, connections: Connections, reliable: bool, message: &T) where T: Serialize {
+
+        let Ok(mut message_bytes) = bincode::serialize(message) else {
+            error!("failed to serialize typed message \"{}\"", std::any::type_name::<T>());
+            return;
+        };
+
+        let mut bytes = Vec::from(self.message_id.to_be_bytes());
+        bytes.append(&mut message_bytes);
+
+        for entity in connections {
+            self.send.push_back((entity, reliable, bytes.clone().into_boxed_slice()));
+        }
     }
 }
 
@@ -218,5 +219,36 @@ impl<'a, T> Iterator for TakeFromIter<'a, T> {
 
             self.position += 1;
         }
+    }
+}
+
+/// when sending messages use this enum to specify which clients to send a message to
+///
+/// [Clients] is never stored, so the lifetime parameter allows [Clients::filter] to reference data such as queries
+pub enum Connections<'a> {
+    None,
+    One(Entity),
+    Iter(Box<dyn Iterator<Item = Entity> + 'a>),
+}
+
+impl<'a> Iterator for Connections<'a> {
+    type Item = Entity;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Connections::None => None,
+            &mut Connections::One(entity) => {
+                *self = Connections::None;
+                Some(entity)
+            },
+            Connections::Iter(iter) => iter.next(),
+        }
+    }
+}
+
+impl<'a> Connections<'a> {
+    /// helper function to construct the `Iter` variant
+    pub fn iter<I: Iterator<Item = Entity> + 'a>(iter: I) -> Self {
+        Connections::Iter(Box::new(iter))
     }
 }

@@ -55,7 +55,7 @@ fn receive_pings(
     for (connection_entity, Ping { message }) in pings.iter() {
         info!("got a ping from {:?} \"{}\"", connection_entity, message);
 
-        pongs.send(connection_entity, true, Pong {
+        pongs.send(Connections::One(connection_entity), true, &Pong {
             message: format!("response to {}", message),
         });
     }

@@ -49,7 +49,7 @@ fn send_pings(
         info!("connected to {}", connection_addr);
 
         for i in 1..=5 {
-            messages.send(connection_entity, true, Ping {
+            messages.send(Connections::One(connection_entity), true, &Ping {
                 message: format!("Hello Server {}", i),
             });
         }
