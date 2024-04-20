@@ -171,10 +171,10 @@ impl<T> TypedMessages<T> {
         self.received.drain(..)
     }
 
-    /// the same as [take](TypedMessages::take) except it will only drain items from a specific connection
-    pub fn take_from(&mut self, connection_entity: Entity) -> TakeFromIter<T> {
+    /// the same as [take](TypedMessages::take) except it will only drain items from [Entity]s specified by a predicate
+    pub fn take_from<P: FnMut(Entity) -> bool>(&mut self, predicate: P) -> TakeFromIter<T, P> {
         TakeFromIter {
-            entity_filter: connection_entity,
+            predicate,
             position: 0,
             messages: self,
         }
@@ -198,22 +198,22 @@ impl<T> TypedMessages<T> {
 }
 
 
-pub struct TakeFromIter<'a, T> {
-    entity_filter: Entity,
+pub struct TakeFromIter<'a, T, P> {
+    predicate: P,
     position: usize,
     messages: &'a mut TypedMessages<T>,
 }
 
-impl<'a, T> Iterator for TakeFromIter<'a, T> {
+impl<'a, T, P: FnMut(Entity) -> bool> Iterator for TakeFromIter<'a, T, P> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            let Some(&(next_entity, _)) = self.messages.received.get(self.position) else {
+            let Some(&(entity, _)) = self.messages.received.get(self.position) else {
                 return None;
             };
 
-            if next_entity == self.entity_filter {
+            if (self.predicate)(entity) {
                 return Some(self.messages.received.remove(self.position).unwrap().1);
             }
 
