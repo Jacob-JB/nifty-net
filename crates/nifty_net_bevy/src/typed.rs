@@ -182,7 +182,7 @@ impl<T> TypedMessages<T> {
     }
 
     /// the same as [take](TypedMessages::take) except it will only drain items from a specific connection
-    pub fn take_from(&mut self, connection_entity: Entity) -> impl Iterator<Item = T> + '_ {
+    pub fn take_from(&mut self, connection_entity: Entity) -> TakeFromIter<T> {
         TakeFromIter {
             entity_filter: connection_entity,
             position: 0,
