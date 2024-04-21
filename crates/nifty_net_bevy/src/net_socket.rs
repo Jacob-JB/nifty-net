@@ -108,7 +108,12 @@ pub struct Disconnected {
 /// this happens when it opens a connection but never gets a response
 #[derive(Event)]
 pub struct FailedConnection {
-    pub addr: SocketAddr,
+    /// the entity of the [NetSocket]
+    pub socket_entity: Entity,
+    /// the address of the socket
+    pub socket_addr: SocketAddr,
+    /// the address of the failed connection
+    pub connection_addr: SocketAddr,
 }
 
 
@@ -251,7 +256,11 @@ fn update_sockets(
 
                 SocketEvent::ClosedConnection { addr } => {
                     let Some(connection_entity) = socket.connections.remove(&addr) else {
-                        failed_connection_w.send(FailedConnection { addr });
+                        failed_connection_w.send(FailedConnection {
+                            socket_addr,
+                            socket_entity: socket.addr,
+                            connection_addr: addr,
+                        });
                         return;
                     };
 
