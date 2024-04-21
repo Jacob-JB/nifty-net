@@ -257,8 +257,8 @@ fn update_sockets(
                 SocketEvent::ClosedConnection { addr } => {
                     let Some(connection_entity) = socket.connections.remove(&addr) else {
                         failed_connection_w.send(FailedConnection {
-                            socket_addr,
-                            socket_entity: socket.addr,
+                            socket_addr: socket.addr,
+                            socket_entity,
                             connection_addr: addr,
                         });
                         return;
