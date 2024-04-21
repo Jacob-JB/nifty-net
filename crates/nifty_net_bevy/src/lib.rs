@@ -12,6 +12,7 @@ pub mod prelude {
         NetworkingPlugin,
         Connected,
         Disconnected,
+        FailedConnection,
         UpdateSockets,
     };
 
