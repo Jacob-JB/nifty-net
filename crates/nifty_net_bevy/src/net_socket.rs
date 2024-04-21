@@ -20,6 +20,7 @@ impl Plugin for NetworkingPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<Connected>();
         app.add_event::<Disconnected>();
+        app.add_event::<FailedConnection>();
 
         app.add_systems(PreUpdate, update_sockets.in_set(UpdateSockets));
     }
@@ -102,6 +103,14 @@ pub struct Disconnected {
     pub connection_addr: SocketAddr,
 }
 
+/// event fired when a [NetSocket] closed a connection before it was established
+///
+/// this happens when it opens a connection but never gets a response
+#[derive(Event)]
+pub struct FailedConnection {
+    pub addr: SocketAddr,
+}
+
 
 impl NetSocket {
     /// binds to an address, returns a [NetSocket] if successful
@@ -173,6 +182,7 @@ fn update_sockets(
     mut connection_q: Query<&mut Connection>,
     mut connected_w: EventWriter<Connected>,
     mut disconnected_w: EventWriter<Disconnected>,
+    mut failed_connection_w: EventWriter<FailedConnection>,
     time: Res<Time>,
 ) {
     for (socket_entity, mut socket, socket_children) in socket_q.iter_mut() {
@@ -241,7 +251,7 @@ fn update_sockets(
 
                 SocketEvent::ClosedConnection { addr } => {
                     let Some(connection_entity) = socket.connections.remove(&addr) else {
-                        error!("a connection was closed that didn't exist");
+                        failed_connection_w.send(FailedConnection { addr });
                         return;
                     };
 
