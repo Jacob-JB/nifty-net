@@ -1,8 +1,8 @@
 # A UDP networking library for me to use for my own games
 
-I needed a networking library to use for my (bevy)[https://bevyengine.org] games.
-After trying a few options like (bevy_renet)[https://crates.io/crates/bevy_renet]
-and (laminar)[https://crates.io/crates/laminar] I decided to have a go at it myself.
+I needed a networking library to use for my [bevy](https://bevyengine.org) games.
+After trying a few options like [bevy_renet](https://crates.io/crates/bevy_renet)
+and [laminar](https://crates.io/crates/laminar) I decided to have a go at it myself.
 
 What I ended up with is pretty bare bones and is described below.
 
