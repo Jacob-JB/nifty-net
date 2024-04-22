@@ -57,7 +57,7 @@ fn main() {
             return;
         }
 
-        if socket.messages_in_transit(server_addr).unwrap() == 0 {
+        if socket.connection_metrics(server_addr).unwrap().messages_in_transit == 0 {
             socket.close_connection(server_addr).unwrap();
             println!("all messages received, closing");
         }

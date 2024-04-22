@@ -425,11 +425,6 @@ impl Connection {
         self.reliable_blacklist.retain(|(time, _)| *time >= earliest);
     }
 
-    /// returns the number of messages that haven't been delivered yet
-    pub fn in_transit(&self) -> usize {
-        self.send_messages.len()
-    }
-
     pub fn drop(&mut self) {
         self.drop_connection = true;
     }
@@ -454,6 +449,7 @@ impl Connection {
             rtt: self.cached_rtt,
             unreliable_message_count: self.unreliable_message_count,
             reliable_message_count: self.reliable_message_count,
+            messages_in_transit: self.send_messages.len(),
         }
     }
 }

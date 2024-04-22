@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use bevy_demo::*;
 use nifty_net_bevy::prelude::*;
 
-const SERVER_ADDR: &'static str = "127.0.0.1:3001";
+const SERVER_ADDR: &'static str = "127.0.0.1:3000";
 
 
 fn main() {

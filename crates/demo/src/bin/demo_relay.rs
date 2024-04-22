@@ -8,7 +8,7 @@ const RELAY_ADDR: &'static str = "127.0.0.1:3001";
 /// change this to adjust packet loss
 fn drop_packet() -> bool {
     // lots of packet loss
-    rand::thread_rng().gen_bool(0.10)
+    rand::thread_rng().gen_bool(0.25)
 }
 
 /// change this to adjust rtt

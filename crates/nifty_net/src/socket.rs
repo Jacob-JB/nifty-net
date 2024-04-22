@@ -16,20 +16,36 @@ pub struct Socket {
 }
 
 pub enum SocketEvent<'a> {
+    /// a message was received from a connection
     Received {
         addr: SocketAddr,
         data: Box<[u8]>,
     },
+    /// a new connection was established with an address
+    ///
+    /// if you are the initiating party, this even will only be fired
+    /// after a response is received
     NewConnection {
         addr: SocketAddr,
     },
+    /// received a request from an address to open a connection
+    ///
+    /// set `accept_connection` to true to open the connection
+    ///
+    /// simply do nothing if you never want to accept incoming connections
     ConnectionRequest {
         addr: SocketAddr,
         accept_connection: &'a mut bool,
     },
+    /// a connection with an address was closed
+    ///
+    /// this even will be fired *before* a corresponding [NewConnection](SocketEvent::NewConnection)
+    /// event in the case that you opened a connection but timed out before a response was
+    /// received
     ClosedConnection {
         addr: SocketAddr,
     },
+    /// some internal error occurred
     Error(Error),
 }
 
@@ -172,6 +188,10 @@ impl Socket {
     /// opens a new connection with an address
     ///
     /// fails if there is already a connection to that address
+    ///
+    /// will cause a [NewConnection](SocketEvent::NewConnection) event to be fired once
+    /// a response is heard, or a [ClosedConnection](SocketEvent::ClosedConnection)
+    /// event if the timeout is reached first
     pub fn open_connection(&mut self, time: Duration, addr: SocketAddr) -> Result<(), ()> {
         let Ok(_) = self.connections.new_connection(Connection::new(time, addr, true)) else {
             return Err(());
@@ -191,13 +211,6 @@ impl Socket {
         connection.send(reliable, data);
 
         Ok(())
-    }
-
-    /// returns the number of messages that have not yet been delivered to some address
-    ///
-    /// fails if there is no connection to that address
-    pub fn messages_in_transit(&self, addr: SocketAddr) -> Result<usize, ()> {
-        self.connections.get_connection(addr).map(|connection| connection.in_transit()).ok_or(())
     }
 
     /// drops the connection with an address

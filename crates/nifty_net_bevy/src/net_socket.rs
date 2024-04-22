@@ -164,7 +164,7 @@ impl Connection {
 
     /// drains the receive message queue
     ///
-    /// if you don't continuously call this messages will fill up forever causing a memory leak
+    /// if you don't continuously call this messages will fill up forever resulting in a memory leak
     pub fn drain_messages(&mut self) -> impl Iterator<Item = Box<[u8]>> + '_ {
         self.receive_queue.drain(..)
     }
