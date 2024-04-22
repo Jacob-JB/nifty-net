@@ -2,7 +2,7 @@ use std::{
     io::ErrorKind, net::{SocketAddr, UdpSocket}, time::Duration
 };
 
-use crate::{connection::{Connection, Connections}, packet::{Handshake, Packet}, Config, Error};
+use crate::{connection::{Connection, Connections}, packet::{Handshake, Packet}, prelude::ConnectionMetrics, Config, Error};
 
 
 const RECV_BUFFER_SIZE: usize = u16::MAX as usize;
@@ -210,5 +210,10 @@ impl Socket {
         } else {
             Err(())
         }
+    }
+
+    /// gets the [ConnectionMetrics] for a connection if it exists
+    pub fn connection_metrics(&self, addr: SocketAddr) -> Option<ConnectionMetrics> {
+        self.connections.get_connection(addr).map(|connection| connection.metrics())
     }
 }

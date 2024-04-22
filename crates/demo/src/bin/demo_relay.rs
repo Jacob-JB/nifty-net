@@ -8,13 +8,13 @@ const RELAY_ADDR: &'static str = "127.0.0.1:3001";
 /// change this to adjust packet loss
 fn drop_packet() -> bool {
     // lots of packet loss
-    rand::thread_rng().gen_bool(0.25)
+    rand::thread_rng().gen_bool(0.10)
 }
 
 /// change this to adjust rtt
 fn delay_packet() -> Duration {
     // lots of delay
-    Duration::from_millis(rand::thread_rng().gen_range(250..=350))
+    Duration::from_millis(rand::thread_rng().gen_range(100..=300))
 }
 
 fn main() {
@@ -30,7 +30,7 @@ fn main() {
             let bytes = buffer[0..received].into();
 
             let client_socket = client_sockets.entry(addr).or_insert_with(|| {
-                let socket = Socket::new("127.0.0.1:0");
+                let socket = Socket::new("0.0.0.0:0");
                 println!("relaying {} -> {}", addr, socket.socket.local_addr().unwrap());
                 socket
             });

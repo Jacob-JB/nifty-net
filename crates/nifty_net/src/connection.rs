@@ -1,6 +1,12 @@
 use std::{collections::{hash_map::Entry, HashMap, VecDeque}, net::{SocketAddr, UdpSocket}, time::Duration};
 
-use crate::{message::{ReceiveMessage, SendMessage}, packet::{Acknowledgement, Blob, Handshake, Heartbeat, Packet}, Config, Error};
+use crate::{
+    message::*,
+    packet::*,
+    metrics::*,
+    Config,
+    Error,
+};
 
 
 
@@ -36,6 +42,12 @@ pub struct Connection {
     drop_connection: bool,
     /// set to true to signal that a connection socket event needs to be fired
     just_connected: bool,
+
+    // metrics
+    sent_packets: u64,
+    sent_bytes: u64,
+    reliable_message_count: u64,
+    unreliable_message_count: u64,
 }
 
 pub struct Connections {
@@ -47,6 +59,8 @@ struct PacketGrouper<'a> {
     socket: &'a UdpSocket,
     mtu: u16,
     current_packet: Packet,
+    sent_packets: &'a mut u64,
+    sent_bytes: &'a mut u64,
 }
 
 
@@ -119,6 +133,11 @@ impl Connection {
 
             drop_connection: false,
             just_connected: !opening_party,
+
+            sent_packets: 0,
+            sent_bytes: 0,
+            reliable_message_count: 0,
+            unreliable_message_count: 0,
         }
     }
 
@@ -131,6 +150,12 @@ impl Connection {
         self.next_fragmentation_id = self.next_fragmentation_id.wrapping_add(1);
 
         self.send_messages.push(SendMessage::new(reliable, fragmentation_id, data));
+
+        if reliable {
+            self.reliable_message_count += 1;
+        } else {
+            self.unreliable_message_count += 1;
+        }
     }
 
     pub fn update(&mut self, time: Duration, config: &Config, socket: &UdpSocket) -> Result<(), Error> {
@@ -151,24 +176,29 @@ impl Connection {
             } {
                 *last_handshake = Some(time);
 
-                Handshake {
+                let sent_bytes = Handshake {
                     protocol_id: config.protocol_id,
                 }.send(self.addr, socket).map_err(|err| Error::IoError(err))?;
+
+                // update metrics
+                self.sent_packets += 1;
+                self.sent_bytes += sent_bytes as u64;
             }
 
-            // println!("waiting for established connection");
             return Ok(());
         }
 
-        let mut grouper = PacketGrouper::new(self.addr, socket, config.mtu);
+        let mut grouper = PacketGrouper::new(self.addr, socket, config.mtu, &mut self.sent_packets, &mut self.sent_bytes);
 
-        let resend_delay = self.round_trip_time().map(|rtt| Duration::from_secs_f32(
+        let resend_delay = self.cached_rtt.map(|rtt| Duration::from_secs_f32(
             rtt.as_secs_f32() * config.reliable_resend_threshold
         ));
 
         // send message fragments
         for message in self.send_messages.iter_mut() {
-            let send_blobs = 'b: {
+
+            // decide whether to send fragments
+            let send_fragments = 'b: {
                 let Some(last_sent) = message.reliable() else {
                     // unreliable, always send
                     break 'b true;
@@ -184,11 +214,15 @@ impl Connection {
                     break 'b false;
                 };
 
-                // send if resend threshold has been reached
-                *last_sent + resend_delay <= time
+                if *last_sent + resend_delay <= time {
+                    // send if resend threshold has been reached
+                    break 'b true;
+                }
+
+                false
             };
 
-            if !send_blobs {
+            if !send_fragments {
                 continue;
             }
 
@@ -412,15 +446,27 @@ impl Connection {
             false
         }
     }
+
+    pub fn metrics(&self) -> ConnectionMetrics {
+        ConnectionMetrics {
+            sent_packets: self.sent_packets,
+            sent_bytes: self.sent_bytes,
+            rtt: self.cached_rtt,
+            unreliable_message_count: self.unreliable_message_count,
+            reliable_message_count: self.reliable_message_count,
+        }
+    }
 }
 
 impl<'a> PacketGrouper<'a> {
-    fn new(addr: SocketAddr, socket: &'a UdpSocket, mtu: u16) -> Self {
+    fn new(addr: SocketAddr, socket: &'a UdpSocket, mtu: u16, sent_packets: &'a mut u64, sent_bytes: &'a mut u64) -> Self {
         PacketGrouper {
             addr,
             socket,
             mtu,
             current_packet: Packet::new(),
+            sent_packets,
+            sent_bytes,
         }
     }
 
@@ -456,8 +502,11 @@ impl<'a> PacketGrouper<'a> {
             return Err(Error::MtuTooSmall);
         }
 
-        self.current_packet.send(self.addr, &self.socket).map_err(|err| Error::IoError(err))?;
+        let sent_bytes = self.current_packet.send(self.addr, &self.socket).map_err(|err| Error::IoError(err))?;
         self.current_packet = Packet::new();
+
+        *self.sent_packets += 1;
+        *self.sent_bytes += sent_bytes as u64;
 
         Ok(())
     }

@@ -3,10 +3,12 @@ pub mod socket;
 pub(crate) mod connection;
 pub(crate) mod packet;
 pub(crate) mod message;
+pub mod metrics;
 
 pub mod prelude {
     pub use crate::socket::{Socket, SocketEvent};
     pub use crate::Config;
+    pub use crate::metrics::ConnectionMetrics;
 }
 
 #[derive(Clone)]
