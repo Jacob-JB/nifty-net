@@ -75,6 +75,8 @@ pub struct Connection {
     send_queue: VecDeque<(bool, Box<[u8]>)>,
     /// marker to disconnect this connection
     disconnect: bool,
+    /// metrics extracted from the socket connection
+    metrics: Option<ConnectionMetrics>,
 }
 
 /// event fired when a new [Connection] is made on a [NetSocket]
@@ -154,6 +156,7 @@ impl Connection {
             receive_queue: VecDeque::new(),
             send_queue: VecDeque::new(),
             disconnect: false,
+            metrics: None,
         }
     }
 
@@ -177,6 +180,11 @@ impl Connection {
     /// disconnect the connection in the next update
     pub fn disconnect(&mut self) {
         self.disconnect = true;
+    }
+
+    /// returns the most recently measured metrics, if any have been
+    pub fn metrics(&self) -> Option<&ConnectionMetrics> {
+        self.metrics.as_ref()
     }
 }
 
@@ -221,6 +229,12 @@ fn update_sockets(
                     if let Err(()) = socket.socket.close_connection(addr) {
                         error!("tried to close connection {} on {:?} {} but the connection didn't exist", addr, socket_entity, socket.addr);
                     }
+                }
+
+                if let Some(metrics) = socket.socket.connection_metrics(addr) {
+                    connection.metrics = Some(metrics);
+                } else {
+                    error!("tried to get connection metrics for {} {:?} from socket {} {:?} but failed", addr, connection_entity, socket.addr, socket_entity);
                 }
             }
         }
