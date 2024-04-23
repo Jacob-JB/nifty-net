@@ -25,8 +25,14 @@ pub struct Connection {
     /// a queue of heartbeats to respond to
     heartbeat_responses: Vec<Heartbeat>,
     rtt_samples: VecDeque<Duration>,
+    /// round trip time
+    ///
     /// recalculated when `rtt_samples` changes
     cached_rtt: Option<Duration>,
+    /// round trip variance (seconds)
+    ///
+    /// recalculated when `rtt_samples` changes
+    cached_rtv: Option<f32>,
     last_keep_alive: Duration,
 
     next_fragmentation_id: u16,
@@ -122,6 +128,7 @@ impl Connection {
             heartbeat_responses: Vec::new(),
             rtt_samples: VecDeque::new(),
             cached_rtt: None,
+            cached_rtv: None,
             last_keep_alive: time,
 
             next_fragmentation_id: 0,
@@ -364,7 +371,20 @@ impl Connection {
                         self.rtt_samples.pop_front();
                     }
 
-                    self.cached_rtt = self.rtt_samples.iter().sum::<Duration>().checked_div(self.rtt_samples.len() as u32);
+                    if self.rtt_samples.len() >= 1 {
+                        self.cached_rtt = Some(self.rtt_samples.iter().sum::<Duration>() / self.rtt_samples.len() as u32);
+                    }
+
+                    if self.rtt_samples.len() >= 2 {
+                        let rtt = self.cached_rtt.unwrap().as_secs_f32();
+
+                        self.cached_rtv = Some(
+                            self.rtt_samples.iter()
+                            .map(Duration::as_secs_f32)
+                            .map(|sample| (sample - rtt).powi(2))
+                            .sum::<f32>() / (self.rtt_samples.len() as f32 - 1.)
+                        );
+                    }
                 },
 
                 Blob::Acknowledgement(ack) => {
@@ -447,6 +467,7 @@ impl Connection {
             sent_packets: self.sent_packets,
             sent_bytes: self.sent_bytes,
             rtt: self.cached_rtt,
+            rtv: self.cached_rtv,
             unreliable_message_count: self.unreliable_message_count,
             reliable_message_count: self.reliable_message_count,
             messages_in_transit: self.send_messages.len(),

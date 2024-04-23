@@ -10,6 +10,10 @@ pub struct ConnectionMetrics {
     ///
     /// is `None` if there have been zero samples to estimate from
     pub rtt: Option<Duration>,
+    /// the estimated round trip variance (seconds)
+    ///
+    /// is `None` if there are less than two samples to estimate from
+    pub rtv: Option<f32>,
     /// how many total unreliable messages have been sent
     pub unreliable_message_count: u64,
     /// how many total reliable messages have been sent
