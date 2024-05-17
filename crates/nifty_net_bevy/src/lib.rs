@@ -23,6 +23,7 @@ pub mod prelude {
     pub use crate::typed::{
         TypedMessagePlugin,
         TypedMessages,
+        TypedSocket,
         Connections,
     };
 }

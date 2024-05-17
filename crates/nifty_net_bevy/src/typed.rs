@@ -4,10 +4,10 @@ use std::collections::VecDeque;
 use bevy::prelude::*;
 use serde::{Serialize, Deserialize};
 
-use crate::net_socket::{
+use crate::{net_socket::{
     Connection,
     UpdateSockets,
-};
+}, prelude::Connected};
 
 /// typed messages are sent in this set in [PreUpdate]
 #[derive(Hash, Debug, PartialEq, Eq, Clone, SystemSet)]
@@ -56,7 +56,8 @@ impl Plugin for TypedMessagePlugin {
         app.init_resource::<BufferedMessages>();
 
         app.add_systems(PreUpdate, (
-            apply_deferred.after(UpdateSockets), // make sure connections have been inserted before reading messages
+            insert_typed_connections.after(UpdateSockets),
+            apply_deferred, // make sure connections have been inserted and marked as typed before reading messages
             buffer_messages.in_set(ReadTypedMessages),
         ).chain());
 
@@ -80,13 +81,34 @@ fn build_message<T: Serialize + for<'a> Deserialize<'a> + Send + Sync + 'static>
 }
 
 
+/// marker component that must be inserted onto a socket for it to gain typed message functionality
+#[derive(Component)]
+pub struct TypedSocket;
+
+/// marker component that get's inserted onto clients that are children of [TypedSocket]s
+#[derive(Component)]
+struct TypedConnection;
+
+fn insert_typed_connections(
+    mut commands: Commands,
+    mut connected_r: EventReader<Connected>,
+    typed_socket_q: Query<(), With<TypedSocket>>,
+) {
+    for &Connected { socket_entity, connection_entity, .. } in connected_r.read() {
+        if typed_socket_q.contains(socket_entity) {
+            commands.entity(connection_entity).insert(TypedConnection);
+        }
+    }
+}
+
+
 #[derive(Resource, Default)]
 struct BufferedMessages {
     messages: Vec<(Entity, Box<[u8]>)>,
 }
 
 fn buffer_messages(
-    mut connection_q: Query<(Entity, &mut Connection)>,
+    mut connection_q: Query<(Entity, &mut Connection), With<TypedConnection>>,
     mut buffer: ResMut<BufferedMessages>,
 ) {
     buffer.messages.clear();

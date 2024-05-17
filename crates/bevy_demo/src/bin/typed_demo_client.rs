@@ -38,7 +38,10 @@ fn setup(
 
     socket.open_connection(SERVER_ADDR.parse().unwrap());
 
-    commands.spawn(socket);
+    commands.spawn((
+        TypedSocket,
+        socket,
+    ));
 }
 
 fn send_pings(

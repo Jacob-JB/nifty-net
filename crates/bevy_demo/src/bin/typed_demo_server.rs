@@ -26,13 +26,16 @@ fn main() {
 fn setup(
     mut commands: Commands,
 ) {
-    commands.spawn(NetSocket::new(
-        SERVER_ADDR.parse().unwrap(),
-        NetSocketConfig {
-            socket_config: Config::default(),
-            accept_incoming: true,
-        },
-    ).unwrap());
+    commands.spawn((
+        TypedSocket,
+        NetSocket::new(
+            SERVER_ADDR.parse().unwrap(),
+            NetSocketConfig {
+                socket_config: Config::default(),
+                accept_incoming: true,
+            },
+        ).unwrap()
+    ));
 }
 
 fn log_connections(
